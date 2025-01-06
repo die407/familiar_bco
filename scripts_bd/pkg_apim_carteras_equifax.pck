@@ -1692,7 +1692,7 @@ IS
 
                         -- Incrementar el contador
                         v_counter := v_counter + 1;
-                      dbms_output.put_line(v_nro_doc || ' insertado en coleccion'); 
+
                       END IF;
                   EXCEPTION
                       WHEN NO_DATA_FOUND THEN
@@ -1737,7 +1737,6 @@ IS
          END IF;  
      END;
      
-     dbms_output.put_line('v_counter: ' || to_char(v_counter));
      
      BEGIN
        DBMS_SCHEDULER.ENABLE('BFAPIM.LIST_FILES_EQUIFAX_CONFIRMADOS');
@@ -1774,7 +1773,7 @@ IS
 
                         -- Asignar valores a la colección
                         my_nested_table(v_counter) := v_nro_doc;
-dbms_output.put_line('RECHAZADO insertado:' || v_nro_doc);
+
                         -- Incrementar el contador
                         v_counter := v_counter + 1;
                       END IF;
