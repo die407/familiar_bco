@@ -381,19 +381,23 @@ IS
                                             argument_position => 1 ,
                                             argument_value    => '/archivos_aplicacion/salida/otras_instituciones/equifax/get_files_1.sh');*/
       BEGIN
-        DBMS_SCHEDULER.ENABLE('BFAPIM.LIST_FILES_EQUIFAX_RECHAZOS');
+        --DBMS_SCHEDULER.ENABLE('BFAPIM.LIST_FILES_EQUIFAX_RECHAZOS');
         DBMS_SCHEDULER.RUN_JOB('BFAPIM.LIST_FILES_EQUIFAX_RECHAZOS');
       EXCEPTION
         WHEN OTHERS THEN
-          pr_apim_insert_apim_equifax_log(SYSDATE, SQLCODE,
-                                            SQLERRM, 'Error al ejecutar Job LIST_FILES_EQUIFAX_RECHAZOS. '||SUBSTR(SQLERRM, INSTR(SQLERRM, ': ') + 2), 
-                                            'pr_apim_cartera_rechazados', NULL);
-          bfapim.pr_apim_mail_equifax(p_asunto => 'Error proceso equifax',
-                              p_texto => 'Error al ejecutar Job LIST_FILES_EQUIFAX_RECHAZOS, en bfapim.pkg_apim_carteras_equifax.pr_apim_cartera_rechazados. Ejecución ABORTADA. '||SQLERRM,
-                              p_codigo_mail => 'MTEI');
-          dbms_output.put_line('Error en JOB. Procedimiento ABORTADO. '||SQLERRM);
-          RETURN;
-          --raise_application_error(-20015, 'Error en JOB. '||SQLERRM);
+          IF SQLCODE = -27369 THEN
+            dbms_output.put_line('BFAPIM.LIST_FILES_EQUIFAX_RECHAZOS. Sin archivos para listar. '||SQLERRM);
+            RETURN;
+          ELSE
+            pr_apim_insert_apim_equifax_log(SYSDATE, SQLCODE,
+                                              SQLERRM, 'Error al ejecutar Job LIST_FILES_EQUIFAX_RECHAZOS. '||SUBSTR(SQLERRM, INSTR(SQLERRM, ': ') + 2), 
+                                              'pr_apim_cartera_rechazados', NULL);
+            bfapim.pr_apim_mail_equifax(p_asunto => 'Error proceso equifax',
+                                p_texto => 'Error al ejecutar Job LIST_FILES_EQUIFAX_RECHAZOS, en bfapim.pkg_apim_carteras_equifax.pr_apim_cartera_rechazados. Ejecución ABORTADA. '||SQLERRM,
+                                p_codigo_mail => 'MTEI');
+            dbms_output.put_line('Error en JOB. Procedimiento ABORTADO. '||SQLERRM || ' sqlcode: '||SQLCODE);
+            RETURN;
+          END IF;
       END;
       dbms_output.put_line('TERMINADO RUN JOB para listar archivos csv');
       -- Abrir el archivo de salida (donde se encuentra la lista de archivos obtenidos)
@@ -1030,8 +1034,8 @@ IS
          AND (ce.cod_calificacion IN (40, 41, 42, 50, 51, 52) OR
              cl.cod_estado_cliente = 'BL' OR pr.ult_cuo_cobrada < 4 OR
              op.cod_destino_oper IN (42, 46, 49) OR op.cod_empresa = 3)
-         --AND (TRUNC(SYSDATE) - TRUNC(cc.fecha_inicio)) > v_cant_dias_bajas
-         AND (TRUNC(SYSDATE) - TRUNC(cc.fecha_inicio)) < 25
+         AND (TRUNC(SYSDATE) - TRUNC(cc.fecha_inicio)) > v_cant_dias_bajas
+         --AND (TRUNC(SYSDATE) - TRUNC(cc.fecha_inicio)) < 25
      UNION    
       SELECT pf.cod_cliente,
              cl.nro_doc_id,
@@ -1063,8 +1067,8 @@ IS
          AND (ce.cod_calificacion IN (40, 41, 42, 50, 51, 52) OR
              cl.cod_estado_cliente = 'BL' OR
              op.cod_destino_oper IN (42, 46, 49) OR op.cod_empresa = 3)
-         --AND (TRUNC(SYSDATE) - TRUNC(cc.fecha_inicio)) > v_cant_dias_bajas;
-          AND (TRUNC(SYSDATE) - TRUNC(cc.fecha_inicio)) < 25;
+         AND (TRUNC(SYSDATE) - TRUNC(cc.fecha_inicio)) > v_cant_dias_bajas;
+          --AND (TRUNC(SYSDATE) - TRUNC(cc.fecha_inicio)) < 25;
      EXCEPTION
        WHEN OTHERS THEN
          pr_apim_insert_apim_equifax_log(SYSDATE, SQLCODE,
@@ -1246,19 +1250,24 @@ IS
      v_found BOOLEAN := FALSE;
    BEGIN
      BEGIN
-       DBMS_SCHEDULER.ENABLE('BFAPIM.LIST_FILES_EQUIFAX_CONFIRMADOS');
+       --DBMS_SCHEDULER.ENABLE('BFAPIM.LIST_FILES_EQUIFAX_CONFIRMADOS');
        DBMS_SCHEDULER.RUN_JOB('BFAPIM.LIST_FILES_EQUIFAX_CONFIRMADOS');
        dbms_output.put_line('TERMINADO RUN JOB LIST_FILES_EQUIFAX_CONFIRMADOS');
      EXCEPTION
        WHEN OTHERS THEN
-         pr_apim_insert_apim_equifax_log(SYSDATE, SQLCODE,
-                                            SQLERRM, 'Error al ejecutar Job LIST_FILES_EQUIFAX_CONFIRMADOS', 
-                                            'pr_apim_cartera_confirmados', NULL);
-         bfapim.pr_apim_mail_equifax(p_asunto => 'Error proceso equifax',
-                              p_texto => 'Error al ejecutar Job LIST_FILES_EQUIFAX_CONFIRMADOS, en bfapim.pkg_apim_carteras_equifax.pr_apim_cartera_confirmados. '||SQLERRM,
-                              p_codigo_mail => 'MTEI');
-         dbms_output.put_line('Error en JOB. Procedimiento ABORTADO. '||SQLERRM);
-          RETURN;
+         IF SQLCODE = -27369 THEN
+            dbms_output.put_line('BFAPIM.LIST_FILES_EQUIFAX_CONFIRMADOS. Sin archivos para listar. '||SQLERRM);
+            RETURN;
+         ELSE
+             pr_apim_insert_apim_equifax_log(SYSDATE, SQLCODE,
+                                                SQLERRM, 'Error al ejecutar Job LIST_FILES_EQUIFAX_CONFIRMADOS', 
+                                                'pr_apim_cartera_confirmados', NULL);
+             bfapim.pr_apim_mail_equifax(p_asunto => 'Error proceso equifax',
+                                  p_texto => 'Error al ejecutar Job LIST_FILES_EQUIFAX_CONFIRMADOS, en bfapim.pkg_apim_carteras_equifax.pr_apim_cartera_confirmados. '||SQLERRM,
+                                  p_codigo_mail => 'MTEI');
+             dbms_output.put_line('Error en JOB. Procedimiento ABORTADO. '||SQLERRM);
+             RETURN;
+         END IF;
          --raise_application_error(-20120, 'Error en JOB LIST_FILES_EQUIFAX_CONFIRMADOS. '||SQLERRM);
      END;
      
@@ -1390,7 +1399,7 @@ IS
                             v_found := FALSE;
                             FOR i IN 1 .. my_nested_table.COUNT LOOP
                                 IF my_nested_table(i) = v_nro_doc THEN
-                          dbms_output.put_line('Array encontrado: '|| v_nro_doc); 
+                          --dbms_output.put_line('Array encontrado: '|| v_nro_doc); 
                                     v_found := TRUE;
                                     EXIT; -- Salir del loop si se encuentra el valor
                                 END IF;
@@ -1652,15 +1661,20 @@ IS
      my_nested_table.DELETE;
      
       BEGIN
-        DBMS_SCHEDULER.ENABLE('BFAPIM.LIST_FILES_EQUIFAX_RECHAZOS');
+        --DBMS_SCHEDULER.ENABLE('BFAPIM.LIST_FILES_EQUIFAX_RECHAZOS');
         DBMS_SCHEDULER.RUN_JOB('BFAPIM.LIST_FILES_EQUIFAX_RECHAZOS');
+        dbms_output.put_line('TERMINADO RUN JOB para listar archivos csv en PR_APIM_LIST_REP_RECHAZADOS');
       EXCEPTION
         WHEN OTHERS THEN
-          dbms_output.put_line('Error o no existen *.csv en JOB BFAPIM.LIST_FILES_EQUIFAX_RECHAZOS. '||SQLERRM);
-          RETURN;
-          --raise_application_error(-20015, 'Error en JOB. '||SQLERRM);
+          IF SQLCODE = -27369 THEN
+            dbms_output.put_line('BFAPIM.LIST_FILES_EQUIFAX_RECHAZOS. Sin archivos para listar. '||SQLERRM);
+            RETURN;
+          ELSE
+            dbms_output.put_line('Error o no existen *.csv en JOB BFAPIM.LIST_FILES_EQUIFAX_RECHAZOS. '||SQLERRM);
+            RETURN;
+          END IF;
       END;
-      dbms_output.put_line('TERMINADO RUN JOB para listar archivos csv en PR_APIM_LIST_REP_RECHAZADOS');
+      
       
       -- Abrir el archivo de salida (donde se encuentra la lista de archivos obtenidos)
       archivo_entrada := utl_file.fopen(v_scripts_directory_rechazados, 'output_mt.txt', 'R');
@@ -1674,7 +1688,7 @@ IS
           IF v_file_name LIKE '%Rechazos%' THEN
 
             IF fc_apim_existe_archivos_equifax(v_file_name) = FALSE THEN
-                dbms_output.put_line('Cargando en coleccion: '|| v_file_name);
+
                 /*Tratamiento del o de los archivos csv de rechazados*/
                 file_handle := UTL_FILE.FOPEN(v_scripts_directory_rechazados, v_file_name, 'R');
                 
@@ -1739,14 +1753,18 @@ IS
      
      
      BEGIN
-       DBMS_SCHEDULER.ENABLE('BFAPIM.LIST_FILES_EQUIFAX_CONFIRMADOS');
+       --DBMS_SCHEDULER.ENABLE('BFAPIM.LIST_FILES_EQUIFAX_CONFIRMADOS');
        DBMS_SCHEDULER.RUN_JOB('BFAPIM.LIST_FILES_EQUIFAX_CONFIRMADOS');
        dbms_output.put_line('TERMINADO RUN JOB LIST_FILES_EQUIFAX_CONFIRMADOS en pr_apim_list_rechazado');
      EXCEPTION
        WHEN OTHERS THEN
-         dbms_output.put_line('Error o no existe/n *.csv en JOB BFAPIM.LIST_FILES_EQUIFAX_CONFIRMADOS. '||SQLERRM);
-          RETURN;
-         --raise_application_error(-20120, 'Error en JOB LIST_FILES_EQUIFAX_CONFIRMADOS. '||SQLERRM);
+         IF SQLCODE = -27369 THEN
+            dbms_output.put_line('BFAPIM.LIST_FILES_EQUIFAX_CONFIRMADOS. Sin archivos para listar. '||SQLERRM);
+            RETURN;
+         ELSE
+           dbms_output.put_line('Error o no existe/n *.csv en JOB BFAPIM.LIST_FILES_EQUIFAX_CONFIRMADOS. '||SQLERRM);
+           RETURN;
+         END IF;
      END;
      
      archivo_entrada := utl_file.fopen(v_path_confirmados, 'output_mt.txt', 'R');
@@ -1758,7 +1776,7 @@ IS
           v_file_name := linea; --para tener ordenado el codigo se guarda en la variable
           IF v_file_name LIKE '%RECHAZADO%' THEN
             IF fc_apim_existe_archivos_equifax(v_file_name) = FALSE THEN
-                dbms_output.put_line('Cargando en coleccion: '|| v_file_name);
+
                 /*Tratamiento del o de los archivos csv de rechazados*/
                 file_handle := UTL_FILE.FOPEN(v_path_confirmados, v_file_name, 'R');
                 
