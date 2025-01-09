@@ -668,8 +668,8 @@ IS
           argument_value  => p_destino
       );
 
-      -- Habilitar el Job
-      DBMS_SCHEDULER.ENABLE('BFAPIM.JOB_MOVER_ARCHIVO_REC_PROC');
+      -- No es necesario Habilitar el Job
+      --DBMS_SCHEDULER.ENABLE('BFAPIM.JOB_MOVER_ARCHIVO_REC_PROC');
 
       -- Opcional: Ejecutar el Job inmediatamente
       DBMS_SCHEDULER.RUN_JOB('BFAPIM.JOB_MOVER_ARCHIVO_REC_PROC');
@@ -709,7 +709,7 @@ IS
    BEGIN
      /*PROCEDIMIENTO PARA PROCESO DE ARCHIVOS DE NOVEDADES*/
      -- Listar 
-     DBMS_SCHEDULER.ENABLE('BFAPIM.LIST_FILES_EQUIFAX_NOVEDADES');
+     --DBMS_SCHEDULER.ENABLE('BFAPIM.LIST_FILES_EQUIFAX_NOVEDADES');
      DBMS_SCHEDULER.RUN_JOB('BFAPIM.LIST_FILES_EQUIFAX_NOVEDADES');
      
      archivo_entrada := utl_file.fopen(v_scripts_directory_rechazados, 'output_mt.txt', 'R');
