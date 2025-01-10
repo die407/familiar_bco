@@ -358,7 +358,7 @@ IS
     -- Creacion del .sh que genera el txt con el listado de archivos csv
     -- Se comenta la creacion del .sh porque va quedar fijo en el servidor con los permisos adecuados
     --pr_swf_crea_get_file_sh;
-    dbms_output.put_line('Inicio proceso ReporteRechazos');
+    dbms_output.put_line('INICIO PROCESO ReporteRechazos');
     --ejecuta el archivo .sh que crea el archivo output_mx.txt y output_mt.txt que contiene el listado de archivos en el directorio
     BEGIN
       /*BEGIN
@@ -412,6 +412,7 @@ IS
           v_file_name := linea; --para tener ordenado el codigo se guarda en la variable
 
           IF v_file_name LIKE '%Rechazos%' THEN
+            v_esAlta := FALSE;
             IF fc_apim_existe_archivos_equifax(v_file_name) = FALSE THEN
                 IF instr(v_file_name, '_Altas_') > 0 THEN
                   v_fecha_nombre_archivo := SUBSTR(v_file_name, instr(v_file_name, '_Altas_') + 7, 8);
@@ -432,9 +433,9 @@ IS
                       IF v_nro_doc != 'Documento' THEN
                         -- Separar los valores del CSV (usualmente separados por , o ;)
                         BEGIN
-                          v_comentario := pr_apim_2array2value (file_line, 18);
+                          v_comentario := REPLACE(REPLACE(TRIM(pr_apim_2array2value (file_line, 18)), CHR(13), ''), CHR(10), ''); --pr_apim_2array2value (file_line, 18);
                           v_tipo_doc_str := pr_apim_2array2value (file_line, 3);
-                          DBMS_OUTPUT.PUT_LINE( 'Documento a procesar:' || v_nro_doc||' - v_comentario: '|| v_comentario);
+                          DBMS_OUTPUT.PUT_LINE( 'ReporteRechazos a procesar:' || v_nro_doc||' - v_comentario: '|| v_comentario);
                         EXCEPTION
                           WHEN OTHERS THEN
                             v_dioError := TRUE;
@@ -464,12 +465,13 @@ IS
 
                         -- ACTUALIZAR CLIENTE_ANTECEDENTE
                         -- tomar el registro mas reciente para actualizar max(fec_actualizacion)
-                        IF TRIM(v_comentario) != 'Error de validacion: Ya esta en seguimiento' 
+                        /*REPLACE(REPLACE(TRIM(v_comentario), CHR(13), ''), CHR(10), '')*/
+                        IF v_comentario != 'Error de validacion: Ya esta en seguimiento' 
                            AND v_dioError = FALSE THEN
                           BEGIN
                               UPDATE ingres.sih_cliente_antecedente
                               SET cod_estado = 'ER',
-                                  comentario = TRIM(v_comentario),
+                                  comentario = v_comentario,
                                   fec_actualizacion = SYSDATE
                               WHERE nro_doc_id = v_nro_doc
                                 AND cod_tipo_doc_id = v_tipo_doc_num
@@ -477,7 +479,7 @@ IS
                                                         FROM ingres.sih_cliente_antecedente
                                                         WHERE nro_doc_id = v_nro_doc
                                                           AND cod_tipo_doc_id = v_tipo_doc_num); --to_date(v_fecha_nombre_archivo, 'DDMMYYYY');
-                                dbms_output.put_line('cliente_antecedente actualizado '||v_nro_doc); 
+                                --dbms_output.put_line('cliente_antecedente actualizado '||v_nro_doc); 
                           EXCEPTION
                             WHEN OTHERS THEN
                               v_dioError := TRUE;
@@ -1285,7 +1287,9 @@ IS
         BEGIN
           utl_file.get_line(archivo_entrada, linea);
           v_file_name := linea; --para tener ordenado el codigo se guarda en la variable
+          
           IF v_file_name LIKE '%PROCESADO%' THEN
+            v_esAlta := FALSE;
             IF fc_apim_existe_archivos_equifax(v_file_name) = FALSE THEN
                 --IF v_file_name LIKE '%_Altas_%' THEN
                 IF INSTR(v_file_name, '_Altas_') > 0 THEN
@@ -1296,7 +1300,7 @@ IS
                 END IF;
                 v_cant_error := 0;
                 v_rowcount := 0;
-                --dbms_output.put_line('Procesando: '|| v_file_name);
+            dbms_output.put_line('Procesando: '|| v_file_name);
                 /*Tratamiento del o de los archivos csv de rechazados*/
                 file_handle := UTL_FILE.FOPEN(v_path_confirmados, v_file_name, 'R');
                 LOOP
@@ -1334,6 +1338,7 @@ IS
                         END;
 
                         IF v_esAlta = TRUE AND v_dioError = FALSE THEN
+
                           -- OBTENER CODIGO DE CLIENTE Y OTROS DATOS DEL CLIENTE
                           BEGIN
                             SELECT primer_nombre, segundo_nombre, primer_apellido, segundo_apellido, apellido_casada, tipo_control, fecha_final, cod_cliente
@@ -1379,7 +1384,7 @@ IS
                                 WHERE nro_doc_id = v_nro_doc
                                   AND cod_tipo_doc_id = v_tipo_doc_num
                                   AND TRUNC(fec_actualizacion) = to_date(v_fecha_nombre_archivo, 'DDMMYYYY');
-                                  --dbms_output.put_line('sih_cliente_antecedente actualizado '||v_nro_doc); 
+
                             EXCEPTION
                               WHEN OTHERS THEN
                                 v_dioError := TRUE;
@@ -1394,17 +1399,19 @@ IS
                           
                           
                         ELSE -- Aqui entraria cuando se trata de un PROCESADO BAJAS
+
                           IF v_dioError = FALSE THEN
+
                             -- DELETE DE sih_clientes_controlados
                             v_found := FALSE;
                             FOR i IN 1 .. my_nested_table.COUNT LOOP
                                 IF my_nested_table(i) = v_nro_doc THEN
-                          --dbms_output.put_line('Array encontrado: '|| v_nro_doc); 
+                       --dbms_output.put_line('Array encontrado: '|| v_nro_doc); 
                                     v_found := TRUE;
                                     EXIT; -- Salir del loop si se encuentra el valor
                                 END IF;
                             END LOOP;
-                            
+                          
                             IF NOT v_found THEN /*solo si no se encuentra en la coleccion se borra(si no se encuentra en reporteRechazos)*/
                               BEGIN
                                 DELETE ingres.sih_clientes_controlados
@@ -1483,7 +1490,6 @@ IS
                         v_dioError := FALSE;
                         -- Separar los valores del CSV (usualmente separados por , o ;)
                         v_tipo_doc_str := pr_apim_2array2value (file_line, 2);
-                        --DBMS_OUTPUT.PUT_LINE( 'Documento a procesar:' || v_nro_doc||' - v_tipo_doc_str: '|| v_tipo_doc_str);
                         
                         -- OBTENER EQUIVALENCIA DEL TIPO DE DOCUMENTO
                         BEGIN
@@ -1512,7 +1518,6 @@ IS
                               WHERE nro_doc_id = v_nro_doc
                                 AND cod_tipo_doc_id = v_tipo_doc_num
                                 AND TRUNC(fec_actualizacion) = to_date(v_fecha_nombre_archivo, 'DDMMYYYY');
-                                --dbms_output.put_line('sih_cliente_antecedente actualizado '||v_nro_doc); 
                           EXCEPTION
                             WHEN OTHERS THEN
                               v_dioError := TRUE;
