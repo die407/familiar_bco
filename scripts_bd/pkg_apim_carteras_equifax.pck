@@ -17,7 +17,7 @@ IS
  
  PROCEDURE pr_crea_script_sh(p_config_key IN VARCHAR2, p_directorio_destino IN VARCHAR2, p_archivo_nombre IN VARCHAR2);
  
- PROCEDURE pr_apim_novedades;
+ --PROCEDURE pr_apim_novedades;
  
  PROCEDURE pr_apim_alta_carteras_fisicas;
  
@@ -52,11 +52,26 @@ IS
   
   FUNCTION fc_apim_existe_archivos_equifax(p_nombre_archivo VARCHAR2) RETURN BOOLEAN;
   
-  PROCEDURE pr_apim_elimina_clientes_controlados(p_documento IN VARCHAR2, p_cod_cliente IN VARCHAR2);
+  PROCEDURE pr_apim_elimina_clientes_controlados(p_documento IN VARCHAR2, p_cod_cliente IN VARCHAR2 DEFAULT NULL);
   
   PROCEDURE pr_apim_list_rep_rechazados;
   
   PROCEDURE pr_apim_list_rechazado;
+  
+  PROCEDURE pr_apim_obt_cliente_antecedente(P_NRO_DOC IN VARCHAR2, P_TIPO_DOC_NUM IN NUMBER, P_FECHA IN DATE, P_ROW_CLIENTE_ANT OUT ingres.sih_cliente_antecedente%ROWTYPE
+                                             /*P_COD_CLIENTE OUT VARCHAR2,
+                                             P_PRIMER_NOMBRE OUT VARCHAR2, P_PRIMER_APELLIDO OUT VARCHAR2, P_TIPO_CONTROL OUT VARCHAR2,
+                                             P_TIPO_MOVIMIENTO OUT VARCHAR2, P_COD_ESTADO OUT VARCHAR2*/);
+                                             
+  PROCEDURE pr_apim_obt_equivalencia_tipo_doc(P_TIPO_DOC_STR IN VARCHAR2, P_EQUIVALENCIA OUT NUMBER);
+  
+  FUNCTION fn_apim_existe_cliente_verificar(P_COD_CLIENTE VARCHAR2) RETURN NUMBER;
+  
+  PROCEDURE pr_apim_update_cliente_verificar(P_COD_CLIENTE IN VARCHAR2, P_FEC_ACTUALIZACION IN DATE, P_COMENTARIO IN VARCHAR2);
+  
+  PROCEDURE pr_apim_update_cliente_antecedente(P_NRO_DOC IN VARCHAR2, P_TIPO_DOC_NUM IN NUMBER, P_FEC_ACTUALIZACION IN DATE, P_COD_ESTADO_UPD IN VARCHAR2, P_COMENTARIO_UPD IN VARCHAR2, P_FEC_UPD IN DATE);
+  
+  PROCEDURE pr_apim_obt_comment_tipo_doc(P_LINEA IN VARCHAR2, P_COMMENT OUT VARCHAR2, P_TIPO_DOC_STR OUT VARCHAR2, P_DIOERROR OUT BOOLEAN);
 END;
 /
 CREATE OR REPLACE PACKAGE BODY BFAPIM.pkg_apim_carteras_equifax
@@ -353,34 +368,17 @@ IS
      v_se_inserto BOOLEAN := FALSE;
      v_cant_error NUMBER;
      v_esAlta BOOLEAN := FALSE;
+     v_sih_cliente_antecedente_row ingres.sih_cliente_antecedente%ROWTYPE;
    BEGIN
-    DBMS_OUTPUT.ENABLE(1000000);
+    --DBMS_OUTPUT.ENABLE(1000000);
     -- Creacion del .sh que genera el txt con el listado de archivos csv
     -- Se comenta la creacion del .sh porque va quedar fijo en el servidor con los permisos adecuados
     --pr_swf_crea_get_file_sh;
     dbms_output.put_line('INICIO PROCESO ReporteRechazos');
-    --ejecuta el archivo .sh que crea el archivo output_mx.txt y output_mt.txt que contiene el listado de archivos en el directorio
     BEGIN
-      /*BEGIN
-        dbms_output.put_line('creacion de job');
-          DBMS_SCHEDULER.CREATE_JOB (
-              job_name        => 'BFAPIM.LIST_FILES_EQUIFAX_RECHAZOS',
-              job_type        => 'EXECUTABLE',
-              --job_action      => '/bin/ls',  -- Cambia esto según tu sistema operativo
-              job_action      => '/archivos_aplicacion/salida/otras_instituciones/equifax/get_files_1.sh',
-              number_of_arguments => 0,
-              auto_drop       => TRUE,
-              enabled         => TRUE
-                  );
-      EXCEPTION
-        WHEN OTHERS THEN
-          dbms_output.put_line('Error en create_job. '||SQLERRM);
-      END;
-      dbms_output.put_line('TERMINADO CREACION JOB');*/
-      /*dbms_scheduler.set_job_argument_value(job_name          => 'BFAPIM.LIST_FILES_EQUIFAX_RECHAZOS',
-                                            argument_position => 1 ,
-                                            argument_value    => '/archivos_aplicacion/salida/otras_instituciones/equifax/get_files_1.sh');*/
+      
       BEGIN
+        --ejecuta el archivo .sh que crea el archivo output_mt.txt que contiene el listado de archivos en el directorio
         --DBMS_SCHEDULER.ENABLE('BFAPIM.LIST_FILES_EQUIFAX_RECHAZOS');
         DBMS_SCHEDULER.RUN_JOB('BFAPIM.LIST_FILES_EQUIFAX_RECHAZOS');
       EXCEPTION
@@ -399,7 +397,7 @@ IS
             RETURN;
           END IF;
       END;
-      dbms_output.put_line('TERMINADO RUN JOB para listar archivos csv');
+      dbms_output.put_line('TERMINADO RUN_JOB para listar archivos csv');
       -- Abrir el archivo de salida (donde se encuentra la lista de archivos obtenidos)
       archivo_entrada := utl_file.fopen(v_scripts_directory_rechazados, 'output_mt.txt', 'R');
       
@@ -435,7 +433,7 @@ IS
                         BEGIN
                           v_comentario := REPLACE(REPLACE(TRIM(pr_apim_2array2value (file_line, 18)), CHR(13), ''), CHR(10), ''); --pr_apim_2array2value (file_line, 18);
                           v_tipo_doc_str := pr_apim_2array2value (file_line, 3);
-                          DBMS_OUTPUT.PUT_LINE( 'ReporteRechazos a procesar:' || v_nro_doc||' - v_comentario: '|| v_comentario);
+                          --DBMS_OUTPUT.PUT_LINE( 'ReporteRechazos a procesar:' || v_nro_doc||' - v_comentario: '|| v_comentario);
                         EXCEPTION
                           WHEN OTHERS THEN
                             v_dioError := TRUE;
@@ -444,16 +442,10 @@ IS
                                                 'pr_apim_cartera_rechazados', NULL);
                             DBMS_OUTPUT.PUT_LINE('Error al obtener datos de la linea. '||SQLERRM);
                         END;
+                        
                         -- OBTENER EQUIVALENCIA DEL TIPO DE DOCUMENTO
-                        /*IF v_tipo_doc_str = 'CI' THEN
-                          v_tipo_doc_num := 1;
-                        ELSIF v_tipo_doc_str = 'RUC' THEN
-                          v_tipo_doc_num := 4;
-                        END IF;*/
                         BEGIN
-                          SELECT cod_tipo_doc_id INTO v_tipo_doc_num
-                          from ingres.tipo_documento_id
-                          WHERE TRIM(abrev_tipo_doc_id) = TRIM(v_tipo_doc_str);
+                          pr_apim_obt_equivalencia_tipo_doc(v_tipo_doc_str, v_tipo_doc_num);
                         EXCEPTION
                           WHEN OTHERS THEN
                             v_dioError := TRUE;
@@ -465,36 +457,54 @@ IS
 
                         -- ACTUALIZAR CLIENTE_ANTECEDENTE
                         -- tomar el registro mas reciente para actualizar max(fec_actualizacion)
-                        /*REPLACE(REPLACE(TRIM(v_comentario), CHR(13), ''), CHR(10), '')*/
-                        IF v_comentario != 'Error de validacion: Ya esta en seguimiento' 
-                           AND v_dioError = FALSE THEN
-                          BEGIN
-                              UPDATE ingres.sih_cliente_antecedente
-                              SET cod_estado = 'ER',
-                                  comentario = v_comentario,
-                                  fec_actualizacion = SYSDATE
+                        IF v_dioError = FALSE THEN
+                          IF v_esAlta = TRUE OR (v_esAlta = FALSE AND v_comentario != 'Error de validacion: Ya esta en seguimiento') THEN
+                            DECLARE
+                              v_max_date DATE;
+                            BEGIN
+                              SELECT MAX(fec_actualizacion) 
+                              INTO v_max_date
+                              FROM ingres.sih_cliente_antecedente
                               WHERE nro_doc_id = v_nro_doc
-                                AND cod_tipo_doc_id = v_tipo_doc_num
-                                AND fec_actualizacion = (SELECT MAX(fec_actualizacion) 
-                                                        FROM ingres.sih_cliente_antecedente
-                                                        WHERE nro_doc_id = v_nro_doc
-                                                          AND cod_tipo_doc_id = v_tipo_doc_num); --to_date(v_fecha_nombre_archivo, 'DDMMYYYY');
-                                --dbms_output.put_line('cliente_antecedente actualizado '||v_nro_doc); 
-                          EXCEPTION
-                            WHEN OTHERS THEN
-                              v_dioError := TRUE;
-                              pr_apim_insert_apim_equifax_log(SYSDATE, SQLCODE,
-                                                  SQLERRM, 'Error al actualizar sih_cliente_antecedente. '|| SUBSTR(SQLERRM, INSTR(SQLERRM, ': ') + 2), 
-                                                  'pr_apim_cartera_rechazados', NULL);
-                              dbms_output.put_line('Error al actualizar en ingres.sih_cliente_antecedente. '||SQLERRM);
-                          END;
+                                AND cod_tipo_doc_id = v_tipo_doc_num;
+                                
+                              pr_apim_update_cliente_antecedente(P_NRO_DOC => v_nro_doc,
+                                                                P_TIPO_DOC_NUM => v_tipo_doc_num,
+                                                                p_fec_actualizacion => v_max_date,
+                                                                P_COD_ESTADO_UPD => 'ER',
+                                                                P_COMENTARIO_UPD => v_comentario,
+                                                                P_FEC_UPD => SYSDATE); -- ver si siempre es sysdate????
+                                /*UPDATE ingres.sih_cliente_antecedente
+                                SET cod_estado = 'ER',
+                                    comentario = v_comentario,
+                                    fec_actualizacion = SYSDATE
+                                WHERE nro_doc_id = v_nro_doc
+                                  AND cod_tipo_doc_id = v_tipo_doc_num
+                                  AND fec_actualizacion = (SELECT MAX(fec_actualizacion) 
+                                                          FROM ingres.sih_cliente_antecedente
+                                                          WHERE nro_doc_id = v_nro_doc
+                                                            AND cod_tipo_doc_id = v_tipo_doc_num);*/
+                                  --dbms_output.put_line('cliente_antecedente actualizado '||v_nro_doc); 
+                            EXCEPTION
+                              WHEN OTHERS THEN
+                                v_dioError := TRUE;
+                                pr_apim_insert_apim_equifax_log(SYSDATE, SQLCODE,
+                                                    SQLERRM, 'Error al actualizar sih_cliente_antecedente. '|| SUBSTR(SQLERRM, INSTR(SQLERRM, ': ') + 2), 
+                                                    'pr_apim_cartera_rechazados', NULL);
+                                dbms_output.put_line('Error al actualizar en ingres.sih_cliente_antecedente. '||SQLERRM);
+                            END;
                         
-                          v_rowcount := v_rowcount + SQL%ROWCOUNT;
-                        
+                            v_rowcount := v_rowcount + SQL%ROWCOUNT;
+                          END IF;
+                          
                           -- OBTENER CODIGO DE CLIENTE Y OTROS DATOS
                           IF v_dioError = FALSE THEN
                             BEGIN
-                              SELECT cod_cliente, primer_nombre, primer_apellido,
+                              pr_apim_obt_cliente_antecedente(v_nro_doc, v_tipo_doc_num, trunc(SYSDATE), v_sih_cliente_antecedente_row
+                              /*v_cod_cliente,
+                                       v_nombre, v_apellido, v_tipo_control,
+                                       v_tipo_movimiento, v_cod_estado*/);
+                              /*SELECT cod_cliente, primer_nombre, primer_apellido,
                                      tipo_control, tipo_movimiento, cod_estado 
                                      --,fec_actualizacion
                               INTO v_cod_cliente, v_nombre, v_apellido,
@@ -504,7 +514,7 @@ IS
                               WHERE nro_doc_id = v_nro_doc
                                 AND cod_tipo_doc_id = v_tipo_doc_num
                                 AND trunc(fec_actualizacion) = trunc(SYSDATE)
-                                AND ROWNUM = 1;
+                                AND ROWNUM = 1;*/
                               v_fec_actualizacion := SYSDATE;
                             EXCEPTION
                               WHEN OTHERS THEN
@@ -519,7 +529,7 @@ IS
                           -- Eliminar de sih_clientes_controlados
                           IF v_dioError = FALSE AND v_esAlta = TRUE THEN
                             BEGIN
-                              pr_apim_elimina_clientes_controlados(v_nro_doc, v_cod_cliente);
+                              pr_apim_elimina_clientes_controlados(v_nro_doc, v_sih_cliente_antecedente_row.cod_cliente /*v_cod_cliente*/);
                             EXCEPTION
                               WHEN OTHERS THEN
                                 v_dioError := TRUE;
@@ -532,27 +542,26 @@ IS
                             DECLARE
                               v_existe_cv NUMBER := 0;
                             BEGIN
-                              BEGIN
-                                SELECT 1 INTO v_existe_cv
-                                FROM ingres.sih_cliente_verificar
-                                WHERE cod_cliente = v_cod_cliente;
-                              EXCEPTION
-                                WHEN no_data_found THEN
-                                  v_existe_cv := 0;
-                              END;
+                              v_existe_cv := fn_apim_existe_cliente_verificar(v_sih_cliente_antecedente_row.cod_cliente /*v_cod_cliente*/);
                               
                               IF v_existe_cv = 1 THEN
-                                UPDATE ingres.sih_cliente_verificar
-                                  SET fec_actualizacion = v_fec_actualizacion,
-                                      comentario = v_comentario
-                                  WHERE cod_cliente = v_cod_cliente;
+                                BEGIN
+                                  pr_apim_update_cliente_verificar(v_sih_cliente_antecedente_row.cod_cliente, v_fec_actualizacion, v_comentario);
                                   v_se_inserto := TRUE;
+                                EXCEPTION
+                                  WHEN OTHERS THEN
+                                    v_dioError := TRUE;
+                                    pr_apim_insert_apim_equifax_log(SYSDATE, SQLCODE,
+                                                          SQLERRM,'Error al actualizar datos en sih_cliente_verificar. ' || SUBSTR(SQLERRM, INSTR(SQLERRM, ': ') + 2), 
+                                                          'pr_apim_cartera_rechazados', NULL);
+                                    dbms_output.put_line('Error al actualizar cliente_verificar. '||SQLERRM);
+                                END;
                               ELSE
                                 BEGIN
-                                  pr_apim_insert_cliente_verificar(v_cod_cliente,       v_nro_doc, 
-                                                                   v_tipo_doc_num,      v_nombre, 
-                                                                   v_apellido,          v_tipo_control, 
-                                                                   v_tipo_movimiento,   v_cod_estado, 
+                                  pr_apim_insert_cliente_verificar(v_sih_cliente_antecedente_row.cod_cliente,       v_nro_doc, 
+                                                                   v_tipo_doc_num,      v_sih_cliente_antecedente_row.primer_nombre, 
+                                                                   v_sih_cliente_antecedente_row.primer_apellido,          v_sih_cliente_antecedente_row.tipo_control, 
+                                                                   v_sih_cliente_antecedente_row.tipo_movimiento,   v_sih_cliente_antecedente_row.cod_estado, 
                                                                    v_fec_actualizacion, v_comentario);
                                   v_se_inserto := TRUE; -- Solo si llego a este punto se considera que inserto al menos uno
                                 EXCEPTION
@@ -700,7 +709,7 @@ IS
               RAISE;
       END;
       
- PROCEDURE pr_apim_novedades
+ /*PROCEDURE pr_apim_novedades
    AS
      file_handle UTL_FILE.FILE_TYPE;
      file_line       VARCHAR2(32767);
@@ -709,7 +718,7 @@ IS
      v_nro_doc    VARCHAR2(100);
      v_file_name     VARCHAR2(255);
    BEGIN
-     /*PROCEDIMIENTO PARA PROCESO DE ARCHIVOS DE NOVEDADES*/
+     
      -- Listar 
      --DBMS_SCHEDULER.ENABLE('BFAPIM.LIST_FILES_EQUIFAX_NOVEDADES');
      DBMS_SCHEDULER.RUN_JOB('BFAPIM.LIST_FILES_EQUIFAX_NOVEDADES');
@@ -724,7 +733,7 @@ IS
 
           IF v_file_name LIKE '%Novedades%' THEN
    dbms_output.put_line('Procesando: '|| v_file_name);
-            /*Tratamiento del o de los archivos csv de */
+            \*Tratamiento del o de los archivos csv de *\
             file_handle := UTL_FILE.FOPEN('ARCHIVOS_EXTERNOS#OTRAS_INSTITUCIONES$EQUIFAX$NOVEDADES', v_file_name, 'R');
             LOOP
               BEGIN
@@ -732,8 +741,8 @@ IS
                   UTL_FILE.GET_LINE(file_handle, file_line);
                   -- Separar los valores del CSV (usualmente separados por comas)
                   v_nro_doc := REGEXP_SUBSTR(file_line, '[^,]+', 1, 1);
-                  /*v_cod_cliente := REGEXP_SUBSTR(file_line, '[^,]+', 1, 2);
-                  v_nombre := REGEXP_SUBSTR(file_line, '[^,]+', 1, 3);*/
+                  \*v_cod_cliente := REGEXP_SUBSTR(file_line, '[^,]+', 1, 2);
+                  v_nombre := REGEXP_SUBSTR(file_line, '[^,]+', 1, 3);*\
                   IF v_nro_doc != 'Documento' THEN
                     DBMS_OUTPUT.PUT_LINE( 'Documento a procesar:' || v_nro_doc);                 
                     --AQUI PROCESAR EL NRO DE DOCUMENTO
@@ -759,7 +768,7 @@ IS
       END LOOP;
       UTL_FILE.FCLOSE(archivo_entrada);
      
-   END;
+   END;*/
    
    PROCEDURE pr_apim_alta_carteras_fisicas
    AS
@@ -1250,6 +1259,7 @@ IS
      v_dioError BOOLEAN;
      v_cant_error NUMBER;
      v_found BOOLEAN := FALSE;
+     v_sih_cliente_antecedente_row ingres.sih_cliente_antecedente%ROWTYPE;
    BEGIN
      BEGIN
        --DBMS_SCHEDULER.ENABLE('BFAPIM.LIST_FILES_EQUIFAX_CONFIRMADOS');
@@ -1301,7 +1311,7 @@ IS
                 v_cant_error := 0;
                 v_rowcount := 0;
             dbms_output.put_line('Procesando: '|| v_file_name);
-                /*Tratamiento del o de los archivos csv de rechazados*/
+                /*Tratamiento del o de los archivos csv*/
                 file_handle := UTL_FILE.FOPEN(v_path_confirmados, v_file_name, 'R');
                 LOOP
                   BEGIN
@@ -1322,9 +1332,7 @@ IS
                           v_tipo_doc_num := 4;
                         END IF;*/
                         BEGIN
-                          SELECT cod_tipo_doc_id INTO v_tipo_doc_num
-                          from ingres.tipo_documento_id
-                          WHERE TRIM(abrev_tipo_doc_id) = TRIM(v_tipo_doc_str);
+                          pr_apim_obt_equivalencia_tipo_doc(v_tipo_doc_str, v_tipo_doc_num);
                         EXCEPTION
                           WHEN OTHERS THEN
                             v_dioError := TRUE;
@@ -1341,13 +1349,14 @@ IS
 
                           -- OBTENER CODIGO DE CLIENTE Y OTROS DATOS DEL CLIENTE
                           BEGIN
-                            SELECT primer_nombre, segundo_nombre, primer_apellido, segundo_apellido, apellido_casada, tipo_control, fecha_final, cod_cliente
+                            pr_apim_obt_cliente_antecedente(v_nro_doc, v_tipo_doc_num, to_date(v_fecha_nombre_archivo, 'DDMMYYYY'), v_sih_cliente_antecedente_row);
+                            /*SELECT primer_nombre, segundo_nombre, primer_apellido, segundo_apellido, apellido_casada, tipo_control, fecha_final, cod_cliente
                             INTO v_nombre1, v_nombre2, v_apellido, v_apellido2, v_apellido_casada, v_tipo_control, v_fecha_final, v_cod_cliente
                             FROM ingres.sih_cliente_antecedente
                             WHERE nro_doc_id = v_nro_doc
                               AND cod_tipo_doc_id = v_tipo_doc_num
                               AND trunc(fec_actualizacion) = to_date(v_fecha_nombre_archivo, 'DDMMYYYY')
-                              AND ROWNUM = 1;
+                              AND ROWNUM = 1;*/
                           EXCEPTION
                             WHEN OTHERS THEN
                             v_dioError := TRUE;
@@ -1362,7 +1371,13 @@ IS
                           -- SE INSERTA EN SIH_CLIENTES_CONTROLADOS / se contabiliza los que fallaron
                           IF v_dioError = FALSE THEN
                             BEGIN
-                              pr_apim_insert_clientes_controlados(v_nro_doc, v_nombre1, v_nombre2, v_apellido, v_apellido2, v_apellido_casada, v_tipo_control, v_fecha_inicio, v_fecha_final, v_cliente_controlado, v_cod_cliente);
+                              --pr_apim_insert_clientes_controlados(v_nro_doc, v_nombre1, v_nombre2, v_apellido, v_apellido2, v_apellido_casada, v_tipo_control, v_fecha_inicio, v_fecha_final, v_cliente_controlado, v_cod_cliente);
+                              pr_apim_insert_clientes_controlados(v_nro_doc, v_sih_cliente_antecedente_row.primer_nombre, 
+                                                        v_sih_cliente_antecedente_row.segundo_nombre, v_sih_cliente_antecedente_row.primer_apellido, 
+                                                        v_sih_cliente_antecedente_row.segundo_apellido, v_sih_cliente_antecedente_row.apellido_casada, 
+                                                        v_sih_cliente_antecedente_row.tipo_control,   v_fecha_inicio, 
+                                                        v_sih_cliente_antecedente_row.fecha_final,    v_cliente_controlado, 
+                                                        v_sih_cliente_antecedente_row.cod_cliente);
                             EXCEPTION
                               WHEN OTHERS THEN
                                 v_dioError := TRUE;
@@ -1378,12 +1393,18 @@ IS
                           -- ACTUALIZAR CLIENTE_ANTECEDENTE
                           IF v_dioError = FALSE THEN
                             BEGIN
-                                UPDATE ingres.sih_cliente_antecedente
+                              pr_apim_update_cliente_antecedente(P_NRO_DOC => v_nro_doc,
+                                                                P_TIPO_DOC_NUM => v_tipo_doc_num,
+                                                                p_fec_actualizacion => to_date(v_fecha_nombre_archivo, 'DDMMYYYY'),
+                                                                P_COD_ESTADO_UPD => 'PR',
+                                                                P_COMENTARIO_UPD => NULL,
+                                                                P_FEC_UPD => SYSDATE);
+                                /*UPDATE ingres.sih_cliente_antecedente
                                 SET cod_estado = 'PR',
                                     fec_actualizacion = SYSDATE
                                 WHERE nro_doc_id = v_nro_doc
                                   AND cod_tipo_doc_id = v_tipo_doc_num
-                                  AND TRUNC(fec_actualizacion) = to_date(v_fecha_nombre_archivo, 'DDMMYYYY');
+                                  AND TRUNC(fec_actualizacion) = to_date(v_fecha_nombre_archivo, 'DDMMYYYY');*/
 
                             EXCEPTION
                               WHEN OTHERS THEN
@@ -1414,8 +1435,7 @@ IS
                           
                             IF NOT v_found THEN /*solo si no se encuentra en la coleccion se borra(si no se encuentra en reporteRechazos)*/
                               BEGIN
-                                DELETE ingres.sih_clientes_controlados
-                                WHERE nro_doc_id = v_nro_doc;
+                                pr_apim_elimina_clientes_controlados(v_nro_doc);
                               EXCEPTION
                                 WHEN OTHERS THEN
                                 v_dioError := TRUE;
@@ -1429,11 +1449,17 @@ IS
                             
                             IF v_dioError = FALSE THEN
                               BEGIN
-                                UPDATE ingres.sih_cliente_antecedente
+                                pr_apim_update_cliente_antecedente(P_NRO_DOC => v_nro_doc,
+                                                            P_TIPO_DOC_NUM => v_tipo_doc_num,
+                                                            p_fec_actualizacion => to_date(v_fecha_nombre_archivo, 'DDMMYYYY'),
+                                                            P_COD_ESTADO_UPD => 'PR',
+                                                            P_COMENTARIO_UPD => NULL,
+                                                            P_FEC_UPD => NULL);
+                                /*UPDATE ingres.sih_cliente_antecedente
                                 SET cod_estado = 'PR'
                                 WHERE nro_doc_id = v_nro_doc
                                   AND cod_tipo_doc_id = v_tipo_doc_num
-                                  AND TRUNC(fec_actualizacion) = to_date(v_fecha_nombre_archivo, 'DDMMYYYY');
+                                  AND TRUNC(fec_actualizacion) = to_date(v_fecha_nombre_archivo, 'DDMMYYYY');*/
                                 v_rowcount := v_rowcount + SQL%ROWCOUNT;
                               EXCEPTION
                                 WHEN OTHERS THEN
@@ -1511,13 +1537,19 @@ IS
                         -- ACTUALIZAR CLIENTE_ANTECEDENTE
                         IF v_dioError = FALSE THEN
                           BEGIN
-                              UPDATE ingres.sih_cliente_antecedente
+                            pr_apim_update_cliente_antecedente(P_NRO_DOC => v_nro_doc,
+                                                            P_TIPO_DOC_NUM => v_tipo_doc_num,
+                                                            p_fec_actualizacion => to_date(v_fecha_nombre_archivo, 'DDMMYYYY'),
+                                                            P_COD_ESTADO_UPD => 'PR',
+                                                            P_COMENTARIO_UPD => 'Cliente no se puede dar de baja antes de 90 dias',
+                                                            P_FEC_UPD => SYSDATE);
+                              /*UPDATE ingres.sih_cliente_antecedente
                               SET cod_estado = 'PR',
                                   comentario = 'Cliente no se puede dar de baja antes de 90 dias',
                                   fec_actualizacion = SYSDATE
                               WHERE nro_doc_id = v_nro_doc
                                 AND cod_tipo_doc_id = v_tipo_doc_num
-                                AND TRUNC(fec_actualizacion) = to_date(v_fecha_nombre_archivo, 'DDMMYYYY');
+                                AND TRUNC(fec_actualizacion) = to_date(v_fecha_nombre_archivo, 'DDMMYYYY');*/
                           EXCEPTION
                             WHEN OTHERS THEN
                               v_dioError := TRUE;
@@ -1642,12 +1674,17 @@ IS
      END IF;
    END;
    
-   PROCEDURE pr_apim_elimina_clientes_controlados(p_documento IN VARCHAR2, p_cod_cliente IN VARCHAR2)
+   PROCEDURE pr_apim_elimina_clientes_controlados(p_documento IN VARCHAR2, p_cod_cliente IN VARCHAR2 DEFAULT NULL)
    AS
    BEGIN
-     DELETE FROM ingres.sih_clientes_controlados
-     WHERE nro_doc_id = p_documento
-       AND cod_cliente = p_cod_cliente;
+     IF p_cod_cliente IS NOT NULL THEN
+       DELETE FROM ingres.sih_clientes_controlados
+       WHERE nro_doc_id = p_documento
+         AND cod_cliente = p_cod_cliente;
+     ELSE
+       DELETE FROM ingres.sih_clientes_controlados
+       WHERE nro_doc_id = p_documento;
+     END IF;
    END;
    
    /* ESTE PROCEDIMIENTO SE UTILIZA PARA GUARDAR EN UNA COLECCION LOS 
@@ -1819,5 +1856,122 @@ IS
       UTL_FILE.FCLOSE(archivo_entrada);
      
    END;
+   
+   PROCEDURE pr_apim_obt_cliente_antecedente(P_NRO_DOC IN VARCHAR2, P_TIPO_DOC_NUM IN NUMBER, P_FECHA IN DATE, P_ROW_CLIENTE_ANT OUT ingres.sih_cliente_antecedente%ROWTYPE
+                                             /*P_COD_CLIENTE OUT VARCHAR2,
+                                             P_PRIMER_NOMBRE OUT VARCHAR2, P_PRIMER_APELLIDO OUT VARCHAR2, P_TIPO_CONTROL OUT VARCHAR2,
+                                             P_TIPO_MOVIMIENTO OUT VARCHAR2, P_COD_ESTADO OUT VARCHAR2*/)
+   AS
+     v_cod_cliente ingres.sih_cliente_antecedente.cod_cliente%TYPE;
+     v_nombre ingres.sih_cliente_antecedente.primer_nombre%TYPE;
+     v_apellido ingres.sih_cliente_antecedente.primer_apellido%TYPE;
+     v_tipo_control ingres.sih_cliente_antecedente.tipo_control%TYPE;
+     v_tipo_movimiento ingres.sih_cliente_antecedente.tipo_movimiento%TYPE;
+     v_cod_estado ingres.sih_cliente_antecedente.cod_estado%TYPE;
+     
+     v_sih_cliente_antecedente_row ingres.sih_cliente_antecedente%ROWTYPE;
+   BEGIN
+     SELECT * /*cod_cliente, primer_nombre, primer_apellido,
+           tipo_control, tipo_movimiento, cod_estado, 
+           segundo_nombre, segundo_apellido, apellido_casada,*/ 
+    INTO v_sih_cliente_antecedente_row /*v_cod_cliente, v_nombre, v_apellido,
+         v_tipo_control, v_tipo_movimiento, v_cod_estado*/
+    FROM ingres.sih_cliente_antecedente
+    WHERE nro_doc_id = P_NRO_DOC
+      AND cod_tipo_doc_id = P_TIPO_DOC_NUM
+      AND trunc(fec_actualizacion) = P_FECHA 
+      AND ROWNUM = 1;
+      
+      /*P_COD_CLIENTE := v_cod_cliente;
+      P_PRIMER_NOMBRE := v_nombre;
+      P_PRIMER_APELLIDO := v_apellido;
+      P_TIPO_CONTROL := v_tipo_control;
+      P_TIPO_MOVIMIENTO := v_tipo_movimiento;
+      P_COD_ESTADO := v_cod_estado;*/
+      P_ROW_CLIENTE_ANT := v_sih_cliente_antecedente_row;
+   END;
+   
+   PROCEDURE pr_apim_obt_equivalencia_tipo_doc(P_TIPO_DOC_STR IN VARCHAR2, P_EQUIVALENCIA OUT NUMBER)
+   AS
+     v_tipo_doc_num ingres.tipo_documento_id.cod_tipo_doc_id%TYPE;
+   BEGIN
+     SELECT cod_tipo_doc_id INTO v_tipo_doc_num
+      from ingres.tipo_documento_id
+      WHERE TRIM(abrev_tipo_doc_id) = TRIM(P_TIPO_DOC_STR);
+     P_EQUIVALENCIA := v_tipo_doc_num;
+   END;
+   
+   FUNCTION fn_apim_existe_cliente_verificar(P_COD_CLIENTE VARCHAR2) RETURN NUMBER
+   AS
+     v_existe_cv NUMBER := 0;
+   BEGIN
+      BEGIN
+        SELECT 1 INTO v_existe_cv
+        FROM ingres.sih_cliente_verificar
+        WHERE cod_cliente = P_COD_CLIENTE;
+      EXCEPTION
+        WHEN no_data_found THEN
+          v_existe_cv := 0;
+      END;
+      
+      RETURN v_existe_cv;
+   END;
+   
+   PROCEDURE pr_apim_update_cliente_verificar(P_COD_CLIENTE IN VARCHAR2, P_FEC_ACTUALIZACION IN DATE, P_COMENTARIO IN VARCHAR2)
+   AS
+   BEGIN
+     UPDATE ingres.sih_cliente_verificar
+      SET fec_actualizacion = P_FEC_ACTUALIZACION,
+          comentario = P_COMENTARIO
+      WHERE cod_cliente = P_COD_CLIENTE;
+   END;
+   
+   PROCEDURE pr_apim_update_cliente_antecedente(P_NRO_DOC IN VARCHAR2, P_TIPO_DOC_NUM IN NUMBER, P_FEC_ACTUALIZACION IN DATE, 
+                                                P_COD_ESTADO_UPD IN VARCHAR2, P_COMENTARIO_UPD IN VARCHAR2, P_FEC_UPD IN DATE)
+   AS
+   BEGIN
+     IF P_COD_ESTADO_UPD IS NOT NULL AND P_COMENTARIO_UPD IS NOT NULL AND P_FEC_UPD IS NOT NULL THEN
+       UPDATE ingres.sih_cliente_antecedente
+          SET cod_estado = P_COD_ESTADO_UPD,
+              comentario = P_COMENTARIO_UPD,
+              fec_actualizacion = P_FEC_UPD
+          WHERE nro_doc_id = P_NRO_DOC
+            AND cod_tipo_doc_id = P_TIPO_DOC_NUM
+            AND TRUNC(fec_actualizacion) = P_FEC_ACTUALIZACION;
+                                
+     ELSIF P_COD_ESTADO_UPD IS NOT NULL AND P_COMENTARIO_UPD IS NOT NULL AND P_FEC_UPD IS NULL THEN
+       
+       UPDATE ingres.sih_cliente_antecedente
+          SET cod_estado = P_COD_ESTADO_UPD,
+              comentario = P_COMENTARIO_UPD
+          WHERE nro_doc_id = P_NRO_DOC
+            AND cod_tipo_doc_id = P_TIPO_DOC_NUM
+            AND TRUNC(fec_actualizacion) = P_FEC_ACTUALIZACION;
+            
+     ELSIF P_COD_ESTADO_UPD IS NOT NULL AND P_COMENTARIO_UPD IS NULL AND P_FEC_UPD IS NULL THEN
+       
+       UPDATE ingres.sih_cliente_antecedente
+          SET cod_estado = P_COD_ESTADO_UPD
+          WHERE nro_doc_id = P_NRO_DOC
+            AND cod_tipo_doc_id = P_TIPO_DOC_NUM
+            AND TRUNC(fec_actualizacion) = P_FEC_ACTUALIZACION;
+            
+     END IF;
+   END;
+   
+   PROCEDURE pr_apim_obt_comment_tipo_doc(P_LINEA IN VARCHAR2, P_COMMENT OUT VARCHAR2, P_TIPO_DOC_STR OUT VARCHAR2, P_DIOERROR OUT BOOLEAN)
+   AS
+   BEGIN
+     P_COMMENT := REPLACE(REPLACE(TRIM(pr_apim_2array2value (P_LINEA, 18)), CHR(13), ''), CHR(10), ''); --pr_apim_2array2value (file_line, 18);
+     P_TIPO_DOC_STR := pr_apim_2array2value (P_LINEA, 3);
+   EXCEPTION
+    WHEN OTHERS THEN
+      P_DIOERROR := TRUE;
+      pr_apim_insert_apim_equifax_log(SYSDATE, SQLCODE,
+                          SQLERRM, 'Error al extraer datos de una linea del archivo csv. ' || SUBSTR(SQLERRM, INSTR(SQLERRM, ': ') + 2), 
+                          'pr_apim_cartera_rechazados', NULL);
+      DBMS_OUTPUT.PUT_LINE('Error al obtener datos de la linea. '||SQLERRM);
+   END;
+
 END;
 /
